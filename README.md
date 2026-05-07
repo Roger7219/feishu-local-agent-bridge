@@ -1,40 +1,40 @@
 # Feishu Local Agent Bridge
 
-A minimal bridge that connects a Feishu/Lark bot to a local agent process.
+一个极简的飞书 / Lark 本地 Agent 桥接框架。
 
-The bridge receives bot messages through `lark-cli event consume`, forwards the text to a configured local command, and sends the command output back with `lark-cli im +messages-send`.
+它通过 `lark-cli event consume` 接收飞书机器人消息，把消息文本转发给你配置的本地 Agent 命令，再通过 `lark-cli im +messages-send` 把本地 Agent 的结果回复到飞书。
 
-> This repository is intentionally business-neutral. It does not include built-in data-platform routes, private tools, cookies, or company-specific adapters.
+> 这个仓库只提供“飞书消息 ↔ 本地 Agent”的通用连接能力，不内置任何业务查询路由、私有工具、Cookie 或公司内部适配器。
 
-## Features
+## 功能特性
 
-- No public callback URL required; uses the `lark-cli` event long connection.
-- Supports private chats and group messages that mention the bot.
-- Calls one configurable local agent command.
-- Passes chat text as a plain subprocess argument; never uses `shell=True`.
-- Supports rate limiting, timeouts, long-output spooling, and JSONL audit logs.
-- Includes a macOS LaunchAgent template for daemon mode.
+- 不需要公网回调地址：使用 `lark-cli` 的事件长连接。
+- 支持私聊机器人，以及群聊中 `@机器人` 触发。
+- 只调用一个可配置的本地 Agent 命令。
+- 用户消息作为普通 subprocess 参数传入，不使用 `shell=True`。
+- 支持限流、超时、长结果落盘、JSONL 审计日志。
+- 提供 macOS LaunchAgent 模板，方便常驻运行。
 
-## Project Layout
+## 项目结构
 
 ```text
 feishu-local-agent-bridge/
-├── bridge.py                                      # Main process: receive, route, call local agent, reply
-├── config.example.yaml                           # Safe config template
-├── config.yaml                                   # Local private config, ignored by Git
+├── bridge.py                                      # 主进程：收消息、调用本地 Agent、回复飞书
+├── config.example.yaml                           # 可提交的配置模板
+├── config.yaml                                   # 本地真实配置，已被 .gitignore 忽略
 ├── launchd/com.example.feishu-local-agent-bridge.plist.example
 ├── requirements.txt
 ├── tests/test_bridge.py
 └── tools/__init__.py
 ```
 
-## Prerequisites
+## 前置条件
 
 - Python 3.9+
 - Node.js / npm
-- `lark-cli` installed and configured
+- 已安装并授权 `lark-cli`
 
-Install Feishu/Lark CLI:
+安装飞书 / Lark CLI：
 
 ```bash
 npm install -g @larksuite/cli
@@ -42,49 +42,49 @@ lark-cli config init --new
 lark-cli doctor
 ```
 
-Install Python dependency:
+安装 Python 依赖：
 
 ```bash
 python3 -m pip install -r requirements.txt
 ```
 
-## Create And Configure The Feishu Bot
+## 创建并配置飞书机器人
 
-In Feishu Open Platform:
+在飞书开放平台中准备一个企业自建应用：
 
-1. Create or open an internal app.
-2. Enable the Bot capability.
-3. Enable event subscription for:
+1. 创建或打开一个内部应用。
+2. 开启「机器人」能力。
+3. 在「事件订阅」中启用：
 
 ```text
 im.message.receive_v1
 ```
 
-4. Grant the scopes required by:
+4. 按下面命令提示补齐接收消息所需权限：
 
 ```bash
 lark-cli event schema im.message.receive_v1
 ```
 
-5. Grant send-message permission if you want bot replies. Otherwise set `send_as: user` in `config.yaml`.
-6. Publish/install the app.
+5. 如果希望用机器人身份回复，请补齐发送消息权限；如果不使用机器人身份回复，可以在 `config.yaml` 里设置 `send_as: user`。
+6. 发布 / 安装应用到当前企业。
 
-Check local event availability:
+检查本机是否能看到事件：
 
 ```bash
 lark-cli event list
 lark-cli event schema im.message.receive_v1
 ```
 
-## Configure
+## 配置
 
-Copy the config template:
+复制配置模板：
 
 ```bash
 cp config.example.yaml config.yaml
 ```
 
-Edit `config.yaml`:
+编辑 `config.yaml`：
 
 ```yaml
 feishu:
@@ -118,32 +118,38 @@ logging:
   dir: ./logs
 ```
 
-`agent.command` is the only integration point. The bridge replaces these placeholders before running the command:
+`agent.command` 是唯一的本地 Agent 接入点。bridge 会在执行前替换这些占位符：
 
-- `{query}`: incoming chat text after removing the bot mention.
-- `{chat_id}`: Feishu chat ID.
-- `{sender_id}`: Feishu sender open ID.
-- `{message_id}`: message/event ID.
+- `{query}`：飞书消息文本，已去掉机器人 mention。
+- `{chat_id}`：飞书 chat ID。
+- `{sender_id}`：发送人 open ID。
+- `{message_id}`：消息 ID / 事件 ID。
 
-Keep the command as a YAML list. Do not wrap the whole command in a shell string.
+请保持 `command` 为 YAML 数组，不要写成一整段 shell 字符串。
 
-## Local Agent Contract
+## 本地 Agent 输出约定
 
-Your local agent can output plain text:
+你的本地 Agent 可以直接输出纯文本：
 
 ```text
 hello from local agent
 ```
 
-Or JSON with one of these string fields:
+也可以输出 JSON：
 
 ```json
 {"reply":"hello from local agent"}
 ```
 
-Supported reply keys are `reply`, `text`, `message`, `output`, and `result`.
+bridge 会优先读取这些字符串字段作为回复内容：
 
-A tiny example agent:
+- `reply`
+- `text`
+- `message`
+- `output`
+- `result`
+
+一个最小 Agent 示例：
 
 ```python
 #!/usr/bin/env python3
@@ -153,103 +159,108 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--query", required=True)
 args = parser.parse_args()
 
-print(f"You said: {args.query}")
+print(f"你说的是：{args.query}")
 ```
 
-## Run Locally
+## 本地运行
 
-Preflight check:
+预检配置：
 
 ```bash
 python3 bridge.py --config config.yaml --check
 ```
 
-Start foreground:
+前台启动：
 
 ```bash
 python3 bridge.py --config config.yaml
 ```
 
-Simulate one event without sending to Feishu:
+模拟一条飞书事件，不真正发消息到飞书：
 
 ```bash
 python3 bridge.py --config config.yaml --dry-run --once-event-json \
 '{"event_id":"ev_test","chat_id":"oc_test","chat_type":"p2p","sender_id":"ou_test","content":"help"}'
 ```
 
-## macOS LaunchAgent
+## macOS 常驻运行
 
-Copy and edit the plist example:
+复制 LaunchAgent 模板：
 
 ```bash
 cp launchd/com.example.feishu-local-agent-bridge.plist.example \
   ~/Library/LaunchAgents/com.example.feishu-local-agent-bridge.plist
 ```
 
-Replace `/ABSOLUTE/PATH/TO/feishu-local-agent-bridge` with your real project path, then load it:
+把模板里的 `/ABSOLUTE/PATH/TO/feishu-local-agent-bridge` 替换成你的项目绝对路径，然后加载：
 
 ```bash
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.feishu-local-agent-bridge.plist
 launchctl kickstart -k gui/$(id -u)/com.example.feishu-local-agent-bridge
 ```
 
-Check status:
+查看状态：
 
 ```bash
 launchctl print gui/$(id -u)/com.example.feishu-local-agent-bridge
 lark-cli event status
 ```
 
-View logs:
+查看日志：
 
 ```bash
 tail -f ./logs/launchd.err.log
 tail -f ./logs/bridge-$(date +%Y%m%d).jsonl
 ```
 
-Stop:
+停止服务：
 
 ```bash
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.example.feishu-local-agent-bridge.plist
 lark-cli event stop
 ```
 
-## Chat Usage
+## 飞书使用方式
 
-Private chat:
+私聊机器人：
 
 ```text
 help
-summarize this note
-query something from my local agent
+帮我总结这段内容
+查询我的本地 Agent 能力
 ```
 
-Group chat:
+群聊中需要 `@机器人`：
 
 ```text
-@YourBotName summarize this note
+@YourBotName 帮我总结这段内容
 ```
 
-Group messages are ignored unless the bot is mentioned.
+群聊中没有 mention 机器人时，bridge 默认不会响应。
 
-## Safety Notes
+## 安全说明
 
-- The bridge never executes chat text as a shell command.
-- The local agent command is configured by the machine owner in `config.yaml`.
-- Real secrets belong in local config, keychains, or environment variables; do not commit them.
-- `config.yaml`, logs, outputs, PID files, and secret-like files are ignored by Git.
-- Set `security.block_write_intents: true` if you want the bridge to reject write-like prompts before calling the local agent.
+- bridge 不会把聊天文本当作 shell 命令执行。
+- 本地 Agent 命令只由机器主人在 `config.yaml` 中配置。
+- 真实密钥应放在本地配置、Keychain 或环境变量中，不要提交到 Git。
+- `config.yaml`、日志、输出目录、PID 文件、疑似密钥文件均已被 `.gitignore` 忽略。
+- 如果希望在调用本地 Agent 前先拦截疑似写操作，可以设置：
 
-## Tests
+```yaml
+security:
+  block_write_intents: true
+```
+
+## 测试
 
 ```bash
 python3 -m py_compile bridge.py tools/__init__.py
 python3 -m unittest discover -s tests -v
 ```
 
-## Publish Checklist
+## 发布前检查
 
-Before publishing or forking, run:
+公开或 fork 前建议执行：
 
 ```bash
 git status --short
@@ -257,22 +268,22 @@ grep -RInE "app_secret|client_secret|access_token|refresh_token|authorization|co
   --exclude-dir=.git --exclude=README.md
 ```
 
-If any real secret was ever committed, rotate that credential and rewrite Git history before making the repository public.
+如果真实密钥曾经被提交过，请先轮换密钥，并重写 Git 历史后再公开仓库。
 
-## Troubleshooting
+## 常见问题
 
-### `lark-cli doctor` says not configured
+### `lark-cli doctor` 提示 not configured
 
-Run:
+执行：
 
 ```bash
 lark-cli config init --new
 lark-cli doctor
 ```
 
-### Bot receives no messages
+### 飞书里发消息没有响应
 
-Check:
+依次检查：
 
 ```bash
 lark-cli event status
@@ -281,11 +292,11 @@ python3 bridge.py --config config.yaml --check
 tail -f ./logs/launchd.err.log
 ```
 
-Common causes: the app is not published, Bot capability is disabled, `im.message.receive_v1` is not subscribed, the group message did not mention the bot, or `bot_name` does not match the actual bot name.
+常见原因：应用没有发布、机器人能力未开启、没有订阅 `im.message.receive_v1`、群聊里没有 `@机器人`、`bot_name` 和实际机器人名称不一致。
 
-### Can this call Codex or another local agent?
+### 可以接入 Codex 或其他本地 Agent 吗？
 
-Yes. Put the local entrypoint in `agent.command`, for example:
+可以。把本地入口命令配置到 `agent.command` 即可：
 
 ```yaml
 agent:
@@ -296,4 +307,4 @@ agent:
     - "{query}"
 ```
 
-The bridge only handles Feishu I/O, rate limits, logs, and subprocess wiring. Your local agent decides how to answer.
+bridge 只负责飞书消息收发、限流、日志和 subprocess 调用；具体怎么回答，由你的本地 Agent 决定。
