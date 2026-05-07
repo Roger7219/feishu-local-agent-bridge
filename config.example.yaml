@@ -1,0 +1,44 @@
+feishu:
+  # Run `lark-cli event list` and keep this default for receiving bot messages.
+  event_key: im.message.receive_v1
+  event_as: bot
+  # Prefer bot replies. The bridge can fall back to user if bot sending is not ready.
+  send_as: bot
+  bot_name: YourBotName
+
+security:
+  trigger: mention_or_dm
+  allow_all_group_users: true
+  allowed_chat_ids: []
+  blocked_open_ids: []
+  max_reply_chars: 3000
+  command_timeout_seconds: 120
+  rate_limit_per_user_per_minute: 5
+  rate_limit_per_user_per_hour: 50
+  rate_limit_per_chat_per_minute: 20
+
+tools:
+  raw_model_lineage:
+    enabled: false
+    readonly: true
+    # Optional: path to your local read-only raw lineage script.
+    script: /absolute/path/to/explore_raw_model_lineage.py
+    limit: 10
+  source_raw_check:
+    enabled: true
+    readonly: true
+    opencli_site: data-map
+    # Optional: cookie file and URL templates for your enterprise data platform; omit if not needed.
+    cookie_file: ""
+    task_detail_url_template: ""
+    task_detail_referer_template: ""
+  table_metadata:
+    enabled: true
+    readonly: true
+    opencli_site: data-map
+
+output:
+  dir: ./outputs
+
+logging:
+  dir: ./logs

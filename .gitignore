@@ -1,0 +1,24 @@
+# local runtime config and logs
+config.yaml
+logs/
+outputs/
+*.pid
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# secrets
+.env
+*.secret
+*lark*config*.json
+*cookie*.json
